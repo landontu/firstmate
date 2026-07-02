@@ -1,6 +1,6 @@
 ---
 name: fm-supervise-depth
-description: Agent-only reference for firstmate supervision internals. Load on a WORKTREE TANGLE banner, a watcher-down guard banner (work in flight with a stale state/.last-watcher-beat beacon), a state/.subsuper-inject-wedged marker, a wake the daemon classifier escalated, or when diagnosing watcher, guard, wake-triage, or arm-chain behavior. Owns the wake-triage classifier, singleton/liveness mechanics, the guard beacon, the worktree-tangle guard, and supervision token discipline.
+description: Agent-only reference for firstmate supervision internals. Load on a WORKTREE TANGLE banner, a watcher-down guard banner (work in flight with a stale state/.last-watcher-beat beacon), a wake the daemon classifier escalated, or when diagnosing watcher, guard, wake-triage, or arm-chain behavior. Owns the wake-triage classifier, singleton/liveness mechanics, the guard beacon, the worktree-tangle guard, and supervision token discipline.
 user-invocable: false
 ---
 
