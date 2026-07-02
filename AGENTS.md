@@ -185,7 +185,7 @@ The inline pointers above and this index are deliberately redundant: a missed br
 | | scaffolding or hand-adjusting a brief | `fm-brief` |
 | | creating, seeding, validating, recovering, handing backlog to, pushing inherited config into, or retiring a secondmate home; editing `data/secondmates.md` | `secondmate-provisioning` |
 | | mutating the backlog (tasks-axi verbs, format contract) | `fm-backlog` |
-| **Supervising** | `WORKTREE TANGLE` banner (`bin/fm-guard.sh`) · watcher-down banner (work in flight + beacon `state/.last-watcher-beat` stale past `FM_GUARD_GRACE`≈300s) · `state/.subsuper-inject-wedged` exists · a wake the daemon classifier escalated | `fm-supervise-depth` |
+| **Supervising** | `WORKTREE TANGLE` banner (`bin/fm-guard.sh`) · watcher-down banner (work in flight + beacon `state/.last-watcher-beat` stale past `FM_GUARD_GRACE`≈300s) · a wake the daemon classifier escalated | `fm-supervise-depth` |
 | | a specific crewmate stale/wedged: stale wake, looping pane, repeated confusion, answered-by-brief question, unresponsive pane, failed steer | `stuck-crewmate-recovery` |
 | | going AFK: `/afk`, `state/.afk` present, an `FM_INJECT_MARK`-prefixed message, any `state/.subsuper-*` marker | `afk` |
 | **Delivering** | task reaches validate / PR-ready / merge / teardown / scout report / promotion, or a teardown refuses | `fm-deliver` (per-mode mechanics; the sanctioned-write exception catalog folded in) |

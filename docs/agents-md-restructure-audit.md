@@ -145,8 +145,13 @@ session-1 v1 draft (recovered from the design-session transcript) and against th
 in `revive-doc-restructure/report.md`:
 
 - v1 → §1c renamed the new branches with the settled `fm-` prefix and hardened the
-  `fm-supervise-depth` trigger from "watcher/guard/tangle anomaly" to the four concrete signals.
+  `fm-supervise-depth` trigger from "watcher/guard/tangle anomaly" to concrete signals.
   Same rows otherwise; **no trigger dropped**.
+- Deliberate deviation from §1c: the `state/.subsuper-inject-wedged` sub-trigger was removed from the
+  `fm-supervise-depth` row. That marker's playbook lives in the `afk` skill, and the next row already
+  routes `any state/.subsuper-* marker → afk`; routing it to `fm-supervise-depth`, whose body carries no
+  guidance on the marker, was a dead route. The row keeps its WORKTREE TANGLE, watcher-down, and
+  daemon-classifier-escalation triggers.
 - The shipped router is §1c with two additive refinements: (1) the four pre-existing skills'
   rows carry their full original §13 trigger lists (harness-adapters' interrupt/exit/resume/verify
   set, stuck-crewmate-recovery's six symptoms, secondmate-provisioning's full verb list,
