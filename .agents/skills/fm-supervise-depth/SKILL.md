@@ -42,7 +42,7 @@ A wake's `signal:` line lists every signal that landed within the coalescing gra
 When a task reaches a terminal state on any wake (a `done`/merge `check:`, a `failed` signal, a scout report, a local-only merge), and X mode is enabled, also post the X-mention completion follow-up if that task is X-linked: `bin/fm-x-followup.sh --check <id>` then `bin/fm-x-followup.sh <id> --text-file <path>` (fmx-respond).
 
 Never rely on hooks or status files alone; when a heartbeat wake does reach you, the review of every window is mandatory and unconditional.
-tmux is the ground truth.
+Each task's backend live-task inventory is the ground truth (tmux by default; a task's meta may record a different `backend=`, though tmux is the only one implemented today).
 For `kind=secondmate`, an idle pane is healthy.
 A secondmate may be sitting on its own watcher with no visible pane changes, so parent supervision uses status writes plus heartbeat review, not pane-staleness.
 `fm-watch.sh` therefore skips stale-pane wakes for windows whose meta records `kind=secondmate`.
