@@ -1,7 +1,7 @@
 # AGENTS.md restructure — line audit
 
 Acceptance test for the 2026-07 progressive-disclosure split (889-line always-loaded root →
-151-content-line core + 7 new on-demand skills): **every deleted line lands in a branch OR is a
+152-content-line core + 7 new on-demand skills): **every deleted line lands in a branch OR is a
 kept invariant**. Line numbers reference the 889-line pre-split AGENTS.md at the commit parent of
 this change (309f269, which includes the #183 runtime-backend interface).
 
@@ -69,7 +69,7 @@ with the reason.
 | 488–503 | Delivery modes divergence + yolo mechanics + review-diff helper + merge FYI | **both**: core §5 (modes, yolo, FYI, compressed) + `fm-deliver` (verbatim; never-red-PR also promoted to core §1) |
 | 505–528 | Validate stage (no-mistakes wrapper, crew-state semantics, run-step states, self-fix red flag) | **skill** `fm-deliver` (verbatim) |
 | 530–534 | PR ready signal + fm-pr-check + what to tell the captain | **both**: core §5 (compressed) + `fm-deliver` (verbatim) |
-| 535 | Custom `state/<id>.check.sh` contract | **skill** `fm-supervise-depth` (verbatim) |
+| 535 | Custom `state/<id>.check.sh` contract | **both**: `fm-deliver` (inline at PR ready, where the authoring moment fires, verbatim + pointer) + `fm-supervise-depth` (verbatim) |
 | 537–539 | "Merge it" = approval; yolo merge; helper flags | **both**: core §5 + `fm-deliver` (verbatim) |
 | 541–557 | Ship teardown, landed rules, fork case, fleet-sync-after, backlog Done update | **skill** `fm-deliver` (verbatim); core §1 rule 3 keeps the invariant |
 | 559–566 | Secondmate teardown | **skill** `fm-deliver` (verbatim) |
@@ -134,7 +134,7 @@ in `revive-doc-restructure/report.md`:
 
 ## Net shape
 
-- Core: 889 lines → 190 (151 non-blank; the settled ~145-line budget counted content lines).
+- Core: 889 lines → 191 (152 non-blank; the settled ~145-line budget counted content lines).
 - New skills: `fm-session-start`, `fm-dispatch`, `fm-project-setup`, `fm-brief`, `fm-backlog`,
   `fm-supervise-depth`, `fm-deliver`; `fmx-respond` gained the §14 image/length/dry-run details it
   lacked. Existing skills keep their names, per the settled naming decision.
