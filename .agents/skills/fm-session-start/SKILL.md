@@ -30,7 +30,7 @@ config/crew-harness  crewmate harness override; LOCAL, gitignored; absent or "de
 config/crew-dispatch.json  optional crewmate dispatch profiles; LOCAL, gitignored; firstmate-maintained but human-editable natural-language rules that choose a per-task harness/model/effort profile (fm-dispatch). Inherited by secondmate homes
 config/secondmate-harness  harness the PRIMARY uses to launch SECONDMATE agents, optionally followed by a model and effort token on the same line ("<harness> [<model>] [<effort>]"; fm-dispatch); LOCAL, gitignored; absent or "default" harness falls back to config/crew-harness then firstmate's own. The primary's own setting; NOT inherited into secondmate homes (secondmates do not spawn secondmates)
 config/backlog-backend  backlog backend override; LOCAL, gitignored; absent or "tasks-axi" = default tasks-axi backend, "manual" = force hand-editing; inherited by secondmate homes (fm-backlog)
-config/backend  runtime session-provider backend override for new tasks; LOCAL, gitignored; absent = tmux; only tmux is verified today; not inherited into secondmate homes
+config/backend  runtime session-provider backend override for new tasks; LOCAL, gitignored; absent = tmux; tmux is the verified reference backend, herdr is a second, experimental backend (docs/herdr-backend.md); not inherited into secondmate homes
 config/x-mode.env    generated X-mode watcher cadence; LOCAL, gitignored; source before arming watcher when present
 data/                personal fleet records; LOCAL, gitignored as a whole
   backlog.md         task queue, dependencies, history
@@ -44,7 +44,7 @@ state/               volatile runtime signals; gitignored
   <id>.status        appended by crewmates: "<state>: <note>" wake-event lines, not current-state truth
   <id>.turn-ended    touched by turn-end hooks
   <id>.grok-turnend-token   firstmate-owned grok hook registry token for the task; removed by teardown
-  <id>.meta          written by fm-spawn: window=, worktree=, project=, harness=, model=, effort=, kind=, mode=, yolo=, tasktmp=; kind=secondmate also records home= and projects=; a task on a non-default runtime backend also records backend= (absent means tmux, the only implemented backend today; bin/fm-backend.sh, fm-supervise-depth) (fm-pr-check, including through fm-pr-merge, appends pr= and GitHub's pr_head= when available; fm-x-link appends x_request= and x_request_ts= for an X-mention-originated task)
+  <id>.meta          written by fm-spawn: window=, worktree=, project=, harness=, model=, effort=, kind=, mode=, yolo=, tasktmp=; kind=secondmate also records home= and projects=; a task on a non-default runtime backend also records backend= (absent means tmux, the verified reference backend; herdr is a second, experimental backend recording herdr_session=, herdr_workspace_id=, herdr_tab_id=, herdr_pane_id= too - docs/herdr-backend.md; bin/fm-backend.sh, fm-supervise-depth) (fm-pr-check, including through fm-pr-merge, appends pr= and GitHub's pr_head= when available; fm-x-link appends x_request= and x_request_ts= for an X-mention-originated task)
   <id>.check.sh      optional slow poll you write per task (e.g. merged-PR check)
   x-watch.check.sh   generated X-mode relay poll shim; present only when opted in
   x-inbox/           generated X-mode pending mention payloads; fmx-respond drains it
@@ -127,8 +127,8 @@ Reconcile reality with your records before doing anything else:
 2. Drain queued wakes with `bin/fm-wake-drain.sh` and keep the printed records as the first work queue for this recovery turn.
 3. Read `data/backlog.md`, `data/secondmates.md` if present, every `state/*.meta`, and every `state/*.status`.
    Treat status files as wake-event history; when you need a live current-state read for a recorded direct report, use `bin/fm-crew-state.sh <id>` instead of inferring from the last status line.
-4. Use the `window=` values from this home's `state/*.meta` files as the live direct-report set, then check those backend endpoints (tmux panes today).
-   Do not sweep every `fm-*` tmux window across all sessions during recovery; another firstmate home's child panes may share that namespace and are not this home's orphans.
+4. Use the `window=` values from this home's `state/*.meta` files as the live direct-report set, then check those recorded backend endpoints.
+   Do not sweep every `fm-*` tmux window or herdr tab across all sessions during recovery; another firstmate home's child endpoints may share that namespace and are not this home's orphans.
 5. If a recorded direct-report window is missing, reconcile it through its meta as described below.
 6. For meta with no window, reconcile by kind.
    For ordinary crewmates, check `treehouse status` in that project, salvage or report.

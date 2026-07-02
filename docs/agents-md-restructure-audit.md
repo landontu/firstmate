@@ -1,9 +1,11 @@
 # AGENTS.md restructure — line audit
 
-Acceptance test for the 2026-07 progressive-disclosure split (889-line always-loaded root →
-152-content-line core + 7 new on-demand skills): **every deleted line lands in a branch OR is a
-kept invariant**. Line numbers reference the 889-line pre-split AGENTS.md at the commit parent of
-this change (309f269, which includes the #183 runtime-backend interface).
+Acceptance test for the 2026-07 progressive-disclosure split (891-line always-loaded root →
+153-content-line core + 7 new on-demand skills): **every deleted line lands in a branch OR is a
+kept invariant**. The commit parent of this change is 34e2472 (#186, the experimental herdr
+runtime backend). Line numbers in the main table reference the 889-line AGENTS.md at 309f269
+(#183, the runtime-backend interface, one commit earlier); the #186 delta on top of it is small
+and audited separately in "#186 herdr delta" below.
 
 Legend: **core** = kept in the new AGENTS.md (verbatim or compressed with all facts preserved);
 **skill** = moved to the named `.agents/skills/*/SKILL.md`; **both** = invariant kept in core with
@@ -115,6 +117,27 @@ with the reason.
 | 882–883, 885–889 | Dry-run behavior for reply/dismiss/followup | **skill** `fmx-respond` (already covered; `endpoint` marker sentence added) |
 | 884 | Dry-run image marker `{media_type, bytes, source_path}` | **skill** `fmx-respond` (added) |
 
+## #186 herdr delta (309f269 → 34e2472)
+
+#186 changed 9 hunks of AGENTS.md (net +2 lines, 889 → 891). Every changed/added line lands as
+follows (all skill placements verbatim from 34e2472, with "(section N)" cross-refs rewritten to
+skill names as elsewhere):
+
+| Old lines (34e2472) | Content | Destination |
+|---|---|---|
+| 80 | `config/backend`: tmux is the verified reference backend, herdr is a second, experimental backend (docs/herdr-backend.md) | **skill** `fm-session-start` (layout tree) |
+| 94 | `<id>.meta`: backend= absent means tmux, the verified reference backend; herdr records herdr_session=, herdr_workspace_id=, herdr_tab_id=, herdr_pane_id= | **skill** `fm-session-start` (layout tree) |
+| 112 (added) | herdr task tab labeled `fm-<id>`; recorded `window=` is `<herdr-session>:<pane-id>` | **core** §2 (verbatim) |
+| 287–288 | Recovery step 4: check recorded backend endpoints; don't sweep tmux windows or herdr tabs of other homes | **skill** `fm-session-start` (recovery checklist) |
+| 417 | fm-send: pass an explicit backend target only when intentionally targeting an endpoint outside this home | **skill** `fm-dispatch` (scope routing) |
+| 451–452 | `--backend tmux` comment reworded + `--backend herdr` example line (added) | **skill** `fm-dispatch` (command forms) |
+| 469, 471 | Spawn creates the runtime endpoint (tmux window by default, herdr tab/pane when backend=herdr); secondmate gets the same kind of runtime endpoint | **skill** `fm-dispatch` (spawn internals) |
+| 478 | Peek the endpoint after spawn | **skill** `fm-dispatch` + **core** §3.6 ("peek the endpoint") |
+| 650 | Ground truth: herdr is the one other implemented, experimental backend today (docs/herdr-backend.md) | **both**: core §4 (verbatim) + `fm-supervise-depth` |
+
+Core §2 also keeps #186's backend-selection summary (`--backend` → `FM_BACKEND` → `config/backend`
+→ tmux; herdr as the second, experimental backend) on lines 55–56.
+
 ## Router reconciliation (session-1 v1 vs shipped)
 
 Per the spec's reconcile-at-ship note, the shipped section-9 router was diffed against the
@@ -134,7 +157,7 @@ in `revive-doc-restructure/report.md`:
 
 ## Net shape
 
-- Core: 889 lines → 191 (152 non-blank; the settled ~145-line budget counted content lines).
+- Core: 891 lines → 192 (153 non-blank; the settled ~145-line budget counted content lines).
 - New skills: `fm-session-start`, `fm-dispatch`, `fm-project-setup`, `fm-brief`, `fm-backlog`,
   `fm-supervise-depth`, `fm-deliver`; `fmx-respond` gained the §14 image/length/dry-run details it
   lacked. Existing skills keep their names, per the settled naming decision.

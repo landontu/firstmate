@@ -37,7 +37,7 @@ A project may appear in several `projects:` clone lists, so choose the secondmat
 If the resolved project is `local-only`, keep the work with the main firstmate even when a secondmate scope sounds relevant.
 If a secondmate's scope fits, steer that secondmate with one concise instruction via `bin/fm-send.sh fm-<id> '<work request>'` and let it run the normal lifecycle inside its own home.
 Its charter retargets escalation to the main firstmate's status file, so routine internal churn stays inside the secondmate home and only `done`, `blocked`, `needs-decision`, `failed`, or captain-relevant phase changes wake the main firstmate.
-The bare `fm-<id>` target resolves through this home's `state/<id>.meta`; pass `session:window` only when intentionally targeting a window outside this firstmate home.
+The bare `fm-<id>` target resolves through this home's `state/<id>.meta`; pass an explicit backend target only when intentionally targeting an endpoint outside this firstmate home.
 A secondmate is itself a firstmate, so a request reaches it in its own chat, which you never read - the return channel that wakes you is its status file.
 So `fm-send` to a bare `fm-<id>` whose meta is `kind=secondmate` automatically prepends a from-firstmate marker (`bin/fm-marker-lib.sh`); the secondmate recognizes it and returns its answer via its status file, or via a doc under its home plus a status pointer for a detailed response, never only in chat.
 Expect and read that response on the status/doc path the same way you read any other status signal; do not peek the secondmate's chat for the answer.
@@ -189,7 +189,8 @@ bin/fm-spawn.sh <id> projects/<repo> --harness codex   # explicit per-task harne
 bin/fm-spawn.sh <id> projects/<repo> codex       # per-task harness override
 bin/fm-spawn.sh <id> projects/<repo> grok        # per-task harness override
 bin/fm-spawn.sh <id> projects/<repo> --harness codex --model gpt-5.5 --effort high   # explicit profile axes
-bin/fm-spawn.sh <id> projects/<repo> --backend tmux   # explicit runtime backend; only tmux is verified today
+bin/fm-spawn.sh <id> projects/<repo> --backend tmux   # explicit runtime backend; tmux is the verified reference backend
+bin/fm-spawn.sh <id> projects/<repo> --backend herdr  # experimental herdr backend (docs/herdr-backend.md); version-gates at spawn
 bin/fm-spawn.sh <id> projects/<repo> --scout     # scout task; records kind=scout in meta
 bin/fm-spawn.sh <id> --secondmate                 # launch a registered persistent secondmate in its home
 bin/fm-spawn.sh <id> <firstmate-home> --secondmate   # launch or recover an explicit secondmate home
@@ -206,9 +207,9 @@ When `config/crew-dispatch.json` exists, the script refuses crewmate or scout la
 When `--model` or `--effort` is omitted, the corresponding meta value is `default` and no launch flag is passed for that axis, except that a `kind=secondmate` spawn can fill the omitted axis from the optional tokens in `config/secondmate-harness`.
 For `kind=secondmate`, the same script launches in the registered or explicit firstmate home instead of running `treehouse get` for a project, records `home=` and `projects=`, and uses the charter brief as the launch prompt.
 
-For ship and scout tasks, the script creates the runtime endpoint (a window in your current tmux session, or a dedicated `firstmate` session when you are outside tmux), runs `treehouse get`, waits for the worktree subshell, asserts the resolved worktree is a genuine isolated worktree distinct from the primary checkout (aborting the spawn otherwise, to prevent the worktree tangle; fm-supervise-depth), installs the turn-end hook, records `state/<id>.meta`, and launches the agent with the brief.
+For ship and scout tasks, the script creates the runtime endpoint (a tmux window by default, or a herdr tab/pane when `backend=herdr`), runs `treehouse get`, waits for the worktree subshell, asserts the resolved worktree is a genuine isolated worktree distinct from the primary checkout (aborting the spawn otherwise, to prevent the worktree tangle; fm-supervise-depth), installs the turn-end hook, records `state/<id>.meta`, and launches the agent with the brief.
 For grok, the turn-end hook is one firstmate-owned global hook under `$GROK_HOME/hooks/`, or `~/.grok/hooks/` when `GROK_HOME` is unset, activated only when the worktree holds the per-task `.fm-grok-turnend` token pointer that matches `state/<id>.grok-turnend-token`; teardown removes the pointer and token.
-For `kind=secondmate`, the script creates the same kind of window but starts directly in the persistent home.
+For `kind=secondmate`, the script creates the same kind of runtime endpoint but starts directly in the persistent home.
 Before launching a secondmate, the script fast-forwards its home worktree to firstmate's own current default-branch commit, so a freshly spawned or recovery-respawned secondmate always starts on firstmate's current version.
 This is a purely local fast-forward of tracked files - never a fetch from origin, and never touching the gitignored operational dirs - so the secondmate's backlog, projects, and any prior in-flight work are untouched; a dirty, diverged, or in-flight home is left as-is and launches unchanged.
 If that pre-launch fast-forward is skipped, `fm-spawn.sh` prints a concise warning to stderr and still launches the secondmate from its unchanged checkout.
@@ -216,5 +217,5 @@ The spawn also propagates the primary's declared inheritable config (see above) 
 No nudge is needed at spawn because the agent reads `AGENTS.md` fresh on launch.
 For already-live secondmates, use `bin/fm-config-push.sh` when only this inherited config needs to be pushed.
 Project worktrees start at detached HEAD on a clean default branch; ship briefs tell the crewmate to create its branch, while scout briefs keep the worktree scratch.
-After spawning, peek the pane to confirm the crewmate is processing the brief and handle any trust dialog with `harness-adapters`.
+After spawning, peek the endpoint to confirm the crewmate is processing the brief and handle any trust dialog with `harness-adapters`.
 Add the task to `data/backlog.md` under In flight (fm-backlog).
