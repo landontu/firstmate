@@ -4,7 +4,7 @@ How firstmate works, in depth.
 
 The [README](../README.md) carries the high-level diagram and a short synopsis.
 This document expands every part of it.
-firstmate's full operating manual for the orchestrator agent itself is [`AGENTS.md`](../AGENTS.md); this is the human-facing companion.
+firstmate's operating manual for the orchestrator agent itself is [`AGENTS.md`](../AGENTS.md) - an always-loaded core of invariants whose trigger-router loads the on-demand agent-only skills under `.agents/skills/`; this is the human-facing companion.
 
 ## Event-driven supervision
 
@@ -156,7 +156,7 @@ The watcher, wake queue, arm wrapper, and afk daemon are unchanged; X mode is la
 
 Durable project-intrinsic agent knowledge lives in each project's committed `AGENTS.md`, with `CLAUDE.md` as a symlink.
 Ship briefs prompt crewmates to create or update those files through the normal delivery path; `data/projects.md` stays a thin private registry.
-The full ownership rule - what is project-intrinsic versus fleet-private, and how firstmate keeps the two apart without writing into project clones - is owned by firstmate's operating manual in [`AGENTS.md`](../AGENTS.md) (project memory ownership).
+The full ownership rule - what is project-intrinsic versus fleet-private, and how firstmate keeps the two apart without writing into project clones - is owned by the `fm-project-setup` agent-only skill ([`.agents/skills/fm-project-setup/SKILL.md`](../.agents/skills/fm-project-setup/SKILL.md), project memory ownership).
 
 ## Local clones stay fresh
 

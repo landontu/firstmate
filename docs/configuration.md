@@ -4,7 +4,7 @@ The files and environment variables you set to operate firstmate.
 
 ## Orchestrator behavior (AGENTS.md)
 
-The shared orchestrator behavior lives in [`AGENTS.md`](../AGENTS.md) - edit it like any prompt when the fleet is empty, or dispatch shared-repo edits to a crewmate while tasks are in flight.
+The shared orchestrator behavior lives in [`AGENTS.md`](../AGENTS.md) - the always-loaded core - and in the on-demand agent-only skills under `.agents/skills/` that its trigger-router loads; edit them like any prompt when the fleet is empty, or dispatch shared-repo edits to a crewmate while tasks are in flight.
 
 ## Backlog backend (.tasks.toml / config/backlog-backend)
 

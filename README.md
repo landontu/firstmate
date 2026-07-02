@@ -150,7 +150,7 @@ Agent-only reference skills live under `.agents/skills/` and are loaded by first
 - [docs/configuration.md](docs/configuration.md) - environment variables, `FM_HOME`, runtime backend selection, optional X mode, the files you set, and harness support.
 - [docs/herdr-backend.md](docs/herdr-backend.md) - experimental herdr backend verification notes and known gaps.
 - [docs/scripts.md](docs/scripts.md) - the `bin/` toolbelt reference.
-- [`AGENTS.md`](AGENTS.md) - firstmate's full operating manual for the orchestrator agent.
+- [`AGENTS.md`](AGENTS.md) - firstmate's always-loaded operating core for the orchestrator agent; its trigger-router loads the on-demand depth from `.agents/skills/`.
 - [CONTRIBUTING.md](CONTRIBUTING.md) - how to contribute, including the dev/test commands.
 
 ## Contributing
