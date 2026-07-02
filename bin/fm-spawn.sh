@@ -41,7 +41,7 @@
 #   dispatch profiles, and backlog backend inherit the primary's settings
 #   (fm-config-inherit-lib.sh).
 #   --scout records kind=scout in the task's meta (report deliverable, scratch worktree;
-#   see AGENTS.md task lifecycle); --secondmate records kind=secondmate and launches in a
+#   see the fm-dispatch and fm-deliver skills); --secondmate records kind=secondmate and launches in a
 #   provisioned firstmate home; the default is kind=ship.
 #   Before a secondmate launch, the home is locally fast-forwarded to the primary
 #   default-branch commit when safe; skipped syncs warn and launch unchanged.
@@ -515,9 +515,10 @@ if [ "$KIND" = secondmate ]; then
   WT="$PROJ_ABS"
   # Local-HEAD sync: before launch, fast-forward this secondmate's worktree to the
   # PRIMARY checkout's current default-branch commit, so a freshly spawned or
-  # recovery-respawned secondmate always runs the primary's version (AGENTS.md
-  # spawn section). Purely local - no fetch: the home is a worktree of this same
-  # repo and already holds the commit. ff-only and guarded; a dirty, diverged, or
+  # recovery-respawned secondmate always runs the primary's version (the
+  # fm-dispatch and secondmate-provisioning skills). Purely local - no fetch:
+  # the home is a worktree of this same repo and already holds the commit.
+  # ff-only and guarded; a dirty, diverged, or
   # wrong-branch home is left untouched and launches as-is. The agent re-reads
   # AGENTS.md fresh on launch, so no nudge is needed here.
   if sm_primary_head=$(primary_head_commit "$FM_ROOT"); then
@@ -761,7 +762,7 @@ EOF
   esac
 fi
 
-# Per-project delivery mode + yolo flag (bin/fm-project-mode.sh; AGENTS.md project management and task lifecycle).
+# Per-project delivery mode + yolo flag (bin/fm-project-mode.sh; the fm-project-setup and fm-deliver skills).
 # Recorded in meta so fm-teardown's safety check and the validate/merge stages can
 # branch on them. Mode governs ship tasks; a scout's deliverable is a report, not a
 # merge, so scout teardown ignores mode.

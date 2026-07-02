@@ -108,8 +108,8 @@ secondmate_sync() {
   # fetch, no origin dependency: a secondmate home is a worktree of this same repo
   # and already holds the primary's commit (fm-ff-lib.sh). Emits NUDGE_SECONDMATES:
   # only for RUNNING secondmates whose instruction surface actually changed, so a
-  # secondmate already on the primary's version is never disturbed (AGENTS.md
-  # bootstrap + supervision). Mirrors fm-update's nudge-secondmates: report so
+  # secondmate already on the primary's version is never disturbed (the
+  # fm-session-start skill). Mirrors fm-update's nudge-secondmates: report so
   # firstmate can live-converge the listed windows.
   [ -d "$STATE" ] || return 0
   local primary_head
