@@ -11,3 +11,8 @@ config/secondmate-harness
 config/backlog-backend
 config/backend
 config/x-mode.env
+
+# local dev eval creds (never commit)
+config/dev-eval.env
+config/*.env
+config/*-creds*
