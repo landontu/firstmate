@@ -64,6 +64,9 @@ bin/fm-teardown.sh <id>
 ```
 
 The script refuses if the worktree holds uncommitted changes or committed work that has not landed; treat a refusal as a stop-and-investigate, not an obstacle.
+Before it returns, removes, or kills anything, it also refuses if the process that invoked it - your shell, or any ancestor up to the harness and tmux server - has its cwd inside a worktree or home it would return or remove (`treehouse return` terminates every process inside), or runs inside the task's own tmux pane (teardown kills that window); cd out (e.g. to this home) and re-run, and never inspect a worktree by `cd`-ing into it (use `git -C`).
+`--force` never bypasses this guard: it is about the caller's safety, not landed work.
+Teardown also prints what `treehouse return` will terminate, warning about anything outside the task's own pane (tmux backend).
 
 The full "landed" definition: the work is landed once `HEAD` is reachable from any remote-tracking branch (a fork counts as a remote - upstream-contribution PRs pushed to a fork satisfy this in any mode); for a normal ship task whose commits are not so reachable, it is also landed when its PR is merged and GitHub reports a PR head that contains the current local work, or when its content is already present in the up-to-date default branch; for `local-only` ship tasks with no remote at all, the work may instead be merged into the local default branch.
 Containment means local `HEAD` is the PR head, local `HEAD` is an ancestor of the PR head, or the unpushed local patches have matching patch IDs in that PR head after no-mistakes replayed the branch.
@@ -91,6 +94,7 @@ Run `bin/fm-teardown.sh <id>` for `kind=secondmate` only when the captain or mai
 Load `secondmate-provisioning` before retiring it.
 The safety check is the secondmate's own home: teardown refuses while its `state/*.meta` contains in-flight work.
 With `--force`, teardown is the explicit discard path for child windows, child work, state, route, lease, and home; never use it unless the captain explicitly said to discard the work.
+The same caller guard covers the home and every child worktree, home, or window `--force` would return, remove, or kill.
 
 ## Scout tasks (report instead of PR)
 

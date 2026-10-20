@@ -34,6 +34,11 @@
 #   (o) fm-pr-check rerun after HEAD moved                      -> no stale pr_head
 #   (p) fm-pr-check when local HEAD lags                        -> record remote PR head
 #   (q) no-mistakes + NO pr= recorded, PR discovered by branch  -> ALLOW  (yolo/no-CI merge)
+#   (r) caller shell's cwd inside the worktree, even with --force -> REFUSE (self-kill guard)
+#   (s) only the script's own cwd inside the worktree             -> ALLOW, moved out first
+#   (t) treehouse status lists a caller pid / other processes     -> REFUSE / printed
+#   (u) task tmux pane vs other processes in treehouse status     -> expected / WARNING
+#   (v) caller runs inside the task's own tmux pane                -> REFUSE (window kill)
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -671,6 +676,184 @@ test_local_only_force_overrides_unpushed() {
   pass "local-only worktree with unpushed work is torn down under --force (escape hatch)"
 }
 
+# Self-kill guard fixtures: a treehouse mock that logs every call and answers
+# `status` from $case_dir/th-status, so tests can control what treehouse claims it
+# would terminate.
+add_logging_treehouse() {
+  local case_dir=$1
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> '$case_dir/treehouse.log'
+[ "\${1:-}" = status ] && cat '$case_dir/th-status' 2>/dev/null
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+  : > "$case_dir/treehouse.log"
+}
+
+assert_worktree_untouched() {
+  local case_dir=$1 label=$2
+  grep -q '^return' "$case_dir/treehouse.log" && fail "$label: treehouse return ran despite the refusal"
+  [ "$(git -C "$case_dir/wt" rev-parse --abbrev-ref HEAD)" = fm/task-x1 ] \
+    || fail "$label: teardown detached or deleted the task branch before refusing"
+  [ -f "$case_dir/state/task-x1.meta" ] || fail "$label: teardown cleared the task meta before refusing"
+}
+
+test_caller_cwd_inside_worktree_refuses_even_with_force() {
+  local case_dir rc arg wt_abs
+  for arg in "" --force; do
+    case_dir=$(make_case "self-kill${arg:+-force}")
+    write_meta "$case_dir" no-mistakes ship
+    add_logging_treehouse "$case_dir"
+    mkdir -p "$case_dir/wt/sub"
+    # The subshell is the "calling shell": its cwd sits in a subdirectory of the
+    # worktree and it stays alive as the teardown's parent (the trailing status
+    # capture keeps bash from exec-ing the teardown in place of the subshell).
+    set +e
+    (
+      cd "$case_dir/wt/sub" || exit 99
+      run_teardown "$case_dir" ${arg:+"$arg"} > "$case_dir/stdout" 2> "$case_dir/stderr"
+      echo "$?" > "$case_dir/rc"
+    )
+    set -e
+    rc=$(cat "$case_dir/rc")
+    expect_code 1 "$rc" "self-kill${arg:+ $arg}: teardown should refuse when its caller's cwd is inside the worktree"
+    wt_abs=$(cd "$case_dir/wt" && pwd -P)
+    grep -F "REFUSED: teardown would return or remove $wt_abs," "$case_dir/stderr" >/dev/null \
+      || fail "self-kill${arg:+ $arg}: refusal did not name the worktree: $(cat "$case_dir/stderr")"
+    grep -F "cwd $wt_abs/sub" "$case_dir/stderr" >/dev/null \
+      || fail "self-kill${arg:+ $arg}: refusal did not name the caller's cwd"
+    grep -F -- "--force does not bypass this guard" "$case_dir/stderr" >/dev/null \
+      || fail "self-kill${arg:+ $arg}: refusal did not print the remediation line"
+    assert_worktree_untouched "$case_dir" "self-kill${arg:+ $arg}"
+  done
+  pass "teardown refuses, untouched, when its caller's cwd is inside the worktree (--force does not bypass)"
+}
+
+test_script_own_cwd_inside_worktree_moves_out() {
+  local case_dir rc
+  case_dir=$(make_case self-cwd-only)
+  write_meta "$case_dir" no-mistakes ship
+  add_logging_treehouse "$case_dir"
+  # exec replaces the subshell, so only the teardown process itself starts in the
+  # worktree; its parent (this test) is outside and is not at risk.
+  set +e
+  (
+    cd "$case_dir/wt" || exit 99
+    exec env FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$case_dir/state" \
+      FM_CONFIG_OVERRIDE="$case_dir/config" PATH="$case_dir/fakebin:$PATH" \
+      "$TEARDOWN" task-x1
+  ) > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "self-cwd-only: teardown should proceed when only its own cwd is inside: $(cat "$case_dir/stderr")"
+  grep -F "moving to / before returning it" "$case_dir/stderr" >/dev/null \
+    || fail "self-cwd-only: teardown did not note moving its own cwd out"
+  grep -F "return --force $case_dir/wt" "$case_dir/treehouse.log" >/dev/null \
+    || fail "self-cwd-only: teardown did not return the worktree"
+  pass "teardown moves its own cwd out of the worktree and proceeds when no caller is inside"
+}
+
+test_treehouse_listed_processes_are_printed_and_caller_refuses() {
+  local case_dir rc sleeper wt_abs
+  case_dir=$(make_case th-status-listing)
+  write_meta "$case_dir" no-mistakes ship
+  add_logging_treehouse "$case_dir"
+  sleep 30 &
+  sleeper=$!
+  # Mirror real `treehouse status` output for a leased slot, holder annotation included.
+  printf '1     leased       %s  (held by task-x1)\n                   sleep (%s)\n' "$case_dir/wt" "$sleeper" > "$case_dir/th-status"
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  kill "$sleeper" 2>/dev/null || true
+  wait "$sleeper" 2>/dev/null || true
+  expect_code 0 "$rc" "th-status-listing: an unrelated listed process should not block teardown"
+  wt_abs=$(cd "$case_dir/wt" && pwd -P)
+  grep -F "treehouse return will terminate in $wt_abs: sleep ($sleeper)" "$case_dir/stdout" >/dev/null \
+    || fail "th-status-listing: teardown did not print what treehouse will terminate: $(cat "$case_dir/stdout")"
+
+  # treehouse status is the authority on what it kills: if it lists the calling
+  # shell, refuse even though that shell's cwd is outside the worktree.
+  case_dir=$(make_case th-status-caller)
+  write_meta "$case_dir" no-mistakes ship
+  add_logging_treehouse "$case_dir"
+  set +e
+  (
+    printf '1     in-use       %s\n                   bash (%s)\n' "$case_dir/wt" "$BASHPID" > "$case_dir/th-status"
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+    echo "$?" > "$case_dir/rc"
+  )
+  set -e
+  rc=$(cat "$case_dir/rc")
+  expect_code 1 "$rc" "th-status-caller: teardown should refuse when treehouse status lists its caller"
+  grep -F "listed by treehouse status" "$case_dir/stderr" >/dev/null \
+    || fail "th-status-caller: refusal did not cite the treehouse status listing: $(cat "$case_dir/stderr")"
+  assert_worktree_untouched "$case_dir" th-status-caller
+  pass "teardown prints treehouse's victim list and refuses when it includes the caller"
+}
+
+# Point the fake tmux's `list-panes` at <pane-pid>, standing in for the task pane.
+add_tmux_pane_pid() {
+  local case_dir=$1 pane_pid=$2
+  cat > "$case_dir/fakebin/tmux" <<SH
+#!/usr/bin/env bash
+[ "\${1:-}" = list-panes ] && echo '$pane_pid'
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/tmux"
+}
+
+test_treehouse_listing_separates_task_pane_from_strays() {
+  local case_dir rc pane stray wt_abs
+  case_dir=$(make_case th-status-pane)
+  write_meta "$case_dir" no-mistakes ship
+  add_logging_treehouse "$case_dir"
+  sleep 30 &
+  pane=$!
+  sleep 30 &
+  stray=$!
+  add_tmux_pane_pid "$case_dir" "$pane"
+  printf '1     leased       %s  (held by task-x1)\n                   sleep (%s), sleep (%s)\n' \
+    "$case_dir/wt" "$pane" "$stray" > "$case_dir/th-status"
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  kill "$pane" "$stray" 2>/dev/null || true
+  wait "$pane" "$stray" 2>/dev/null || true
+  expect_code 0 "$rc" "th-status-pane: teardown should proceed with only pane and stray processes listed"
+  wt_abs=$(cd "$case_dir/wt" && pwd -P)
+  grep -F "treehouse return will terminate in $wt_abs (task pane): sleep ($pane)" "$case_dir/stdout" >/dev/null \
+    || fail "th-status-pane: the task pane's process was not reported as expected: $(cat "$case_dir/stdout")"
+  grep -F "WARNING: treehouse return will also terminate in $wt_abs (not the task pane): sleep ($stray)" "$case_dir/stderr" >/dev/null \
+    || fail "th-status-pane: the stray process was not flagged: $(cat "$case_dir/stderr")"
+  pass "teardown labels the task pane's processes and warns about any other treehouse victim"
+}
+
+test_caller_inside_task_pane_refuses() {
+  local case_dir rc
+  case_dir=$(make_case self-kill-pane)
+  write_meta "$case_dir" no-mistakes ship
+  add_logging_treehouse "$case_dir"
+  # The calling subshell plays the task pane's process: its cwd is outside the
+  # worktree, but teardown's window kill would still take it down.
+  set +e
+  (
+    add_tmux_pane_pid "$case_dir" "$BASHPID"
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+    echo "$?" > "$case_dir/rc"
+  )
+  set -e
+  rc=$(cat "$case_dir/rc")
+  expect_code 1 "$rc" "self-kill-pane: teardown should refuse when it runs inside the task's own pane"
+  grep -F "REFUSED: teardown kills the task window fm-task-x1" "$case_dir/stderr" >/dev/null \
+    || fail "self-kill-pane: refusal did not cite the task window: $(cat "$case_dir/stderr")"
+  assert_worktree_untouched "$case_dir" self-kill-pane
+  pass "teardown refuses, untouched, when it runs inside the task's own pane"
+}
+
 test_local_only_fork_remote_allows
 test_teardown_prompts_tasks_axi_done_when_compatible
 test_teardown_manual_backend_prompts_hand_edit_even_when_tasks_axi_present
@@ -690,3 +873,8 @@ test_content_in_default_fallback_allows
 test_content_fallback_refreshes_stale_origin_ref
 test_dirty_worktree_refuses
 test_gh_error_and_content_absent_refuses
+test_caller_cwd_inside_worktree_refuses_even_with_force
+test_script_own_cwd_inside_worktree_moves_out
+test_treehouse_listed_processes_are_printed_and_caller_refuses
+test_treehouse_listing_separates_task_pane_from_strays
+test_caller_inside_task_pane_refuses

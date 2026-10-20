@@ -1027,6 +1027,55 @@ EOF
   pass "secondmate teardown retires empty homes and releases routing"
 }
 
+test_secondmate_teardown_refuses_caller_inside_home() {
+  local home subhome subhome_abs fakebin log lease fmroot err rc
+  home="$TMP_ROOT/self-kill-home"
+  subhome="$TMP_ROOT/self-kill-subhome"
+  fmroot="$TMP_ROOT/self-kill-fmroot"
+  err="$TMP_ROOT/self-kill-home.err"
+  make_firstmate_git_root "$fmroot"
+  git -C "$fmroot" worktree add --quiet --detach "$subhome" HEAD
+  mkdir -p "$home/state" "$home/data" "$subhome/state"
+  printf 'domain\n' > "$subhome/.fm-secondmate-home"
+  subhome_abs=$(cd "$subhome" && pwd -P)
+  cat > "$home/state/domain.meta" <<EOF
+window=firstmate:fm-domain
+worktree=$subhome
+project=$subhome
+harness=echo
+kind=secondmate
+mode=secondmate
+yolo=off
+home=$subhome
+projects=alpha
+EOF
+  printf '%s\n' '- domain - design domain (home: '"$subhome"'; scope: design domain; projects: alpha; added 2026-06-22)' > "$home/data/secondmates.md"
+  fakebin=$(make_fake_tmux "$TMP_ROOT/self-kill-home-fake")
+  log="$TMP_ROOT/self-kill-home-fake/tmux.log"
+  lease="$TMP_ROOT/self-kill-home-fake/lease"
+  printf 'domain\n' > "$lease"
+  # The calling shell sits inside the secondmate home being retired.
+  set +e
+  (
+    cd "$subhome/state" || exit 99
+    PATH="$fakebin:$PATH" FM_ROOT_OVERRIDE="$fmroot" FM_HOME="$home" FM_FAKE_TMUX_LOG="$log" FM_FAKE_TMUX_CAPTURE="$TMP_ROOT/self-kill-home-fake/pane.txt" \
+      FM_FAKE_TREEHOUSE_LEASE_FILE="$lease" \
+      "$ROOT/bin/fm-teardown.sh" domain >/dev/null 2>"$err"
+    echo "$?" > "$err.rc"
+  )
+  set -e
+  rc=$(cat "$err.rc")
+  [ "$rc" = 1 ] || fail "teardown did not refuse a caller inside the secondmate home (rc=$rc)"
+  grep -F "REFUSED: teardown would return or remove $subhome_abs," "$err" >/dev/null \
+    || fail "self-kill refusal did not name the secondmate home: $(cat "$err")"
+  [ -d "$subhome" ] || fail "self-kill refusal removed the secondmate home"
+  [ -e "$lease" ] || fail "self-kill refusal released the home lease"
+  [ -f "$home/state/domain.meta" ] || fail "self-kill refusal cleared parent meta"
+  grep -F 'kill-window' "$log" >/dev/null 2>&1 && fail "self-kill refusal killed the secondmate window"
+  grep -F -- '- domain ' "$home/data/secondmates.md" >/dev/null || fail "self-kill refusal removed the registry route"
+  pass "secondmate teardown refuses, untouched, when its caller is inside the home"
+}
+
 test_secondmate_teardown_refuses_failed_leased_home_return() {
   local home subhome subhome_abs fakebin log fmroot err rc
   home="$TMP_ROOT/teardown-return-fail-home"
@@ -1149,6 +1198,62 @@ EOF
   grep -F 'kill-window -t firstmate:fm-child' "$log" >/dev/null || fail "force teardown did not kill child window"
   grep -F 'kill-window -t firstmate:fm-domain' "$log" >/dev/null || fail "force teardown did not kill parent window"
   pass "secondmate force teardown discards child work"
+}
+
+test_secondmate_force_teardown_refuses_caller_inside_child_worktree() {
+  local home subhome childproj childwt fakebin log err rc
+  home="$TMP_ROOT/self-kill-teardown-home"
+  subhome="$TMP_ROOT/self-kill-teardown-subhome"
+  childproj="$subhome/projects/alpha"
+  childwt="$TMP_ROOT/self-kill-child-worktree"
+  err="$TMP_ROOT/self-kill-teardown.err"
+  mkdir -p "$home/state" "$home/data" "$subhome/state"
+  fm_git_worktree "$childproj" "$childwt" self-kill-child
+  printf 'domain\n' > "$subhome/.fm-secondmate-home"
+  cat > "$home/state/domain.meta" <<EOF
+window=firstmate:fm-domain
+worktree=$subhome
+project=$subhome
+harness=echo
+kind=secondmate
+mode=secondmate
+yolo=off
+home=$subhome
+projects=alpha
+EOF
+  printf '%s\n' '- domain - design domain (home: '"$subhome"'; scope: design domain; projects: alpha; added 2026-06-22)' > "$home/data/secondmates.md"
+  cat > "$subhome/state/child.meta" <<EOF
+window=firstmate:fm-child
+worktree=$childwt
+project=$childproj
+harness=echo
+kind=ship
+mode=no-mistakes
+yolo=off
+EOF
+  fakebin=$(make_fake_tmux "$TMP_ROOT/self-kill-teardown-fake")
+  log="$TMP_ROOT/self-kill-teardown-fake/tmux.log"
+  # The calling shell sits inside the child worktree that --force would return;
+  # the self-kill guard must refuse before any child cleanup starts.
+  set +e
+  (
+    cd "$childwt" || exit 99
+    PATH="$fakebin:$PATH" FM_HOME="$home" FM_FAKE_TMUX_LOG="$log" FM_FAKE_TMUX_CAPTURE="$TMP_ROOT/self-kill-teardown-fake/pane.txt" \
+      "$ROOT/bin/fm-teardown.sh" domain --force >/dev/null 2>"$err"
+    echo "$?" > "$err.rc"
+  )
+  set -e
+  rc=$(cat "$err.rc")
+  [ "$rc" = 1 ] || fail "force teardown did not refuse a caller inside the child worktree (rc=$rc)"
+  grep -F "REFUSED: teardown would return or remove $(cd "$childwt" && pwd -P)," "$err" >/dev/null \
+    || fail "self-kill refusal did not name the child worktree: $(cat "$err")"
+  [ -d "$childwt" ] || fail "self-kill refusal removed the child worktree"
+  [ -d "$subhome" ] || fail "self-kill refusal removed the secondmate home"
+  [ -f "$subhome/state/child.meta" ] || fail "self-kill refusal cleared child meta"
+  [ -f "$home/state/domain.meta" ] || fail "self-kill refusal cleared parent meta"
+  grep -F 'kill-window' "$log" >/dev/null 2>&1 && fail "self-kill refusal killed a window before refusing"
+  grep -F 'treehouse return' "$log" >/dev/null 2>&1 && fail "self-kill refusal ran treehouse return"
+  pass "secondmate force teardown refuses, untouched, when its caller is inside a child worktree"
 }
 
 test_secondmate_force_teardown_allows_operational_dir_symlinks_inside_home() {
@@ -1760,9 +1865,11 @@ test_secondmate_spawn_requires_seeded_matching_home
 test_secondmate_spawn_refuses_operational_dirs_outside_subhome
 test_fm_send_refuses_bare_window_without_home_meta
 test_secondmate_teardown_retires_empty_home
+test_secondmate_teardown_refuses_caller_inside_home
 test_secondmate_teardown_refuses_failed_leased_home_return
 test_secondmate_teardown_removes_plain_clone_home_without_treehouse_return
 test_secondmate_force_teardown_discards_child_work
+test_secondmate_force_teardown_refuses_caller_inside_child_worktree
 test_secondmate_force_teardown_allows_operational_dir_symlinks_inside_home
 test_secondmate_force_teardown_refuses_operational_dir_symlink_outside_home
 test_secondmate_teardown_refuses_registered_nested_home
