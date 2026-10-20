@@ -22,6 +22,11 @@ set -u
 . "$ROOT/bin/fm-tangle-lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-tangle-guard)
+
+# Keep bootstrap off the host's real no-mistakes (see fm_fake_no_mistakes).
+NM_FAKEBIN=$(fm_fakebin "$TMP_ROOT/nm")
+fm_fake_no_mistakes "$NM_FAKEBIN"
+export PATH="$NM_FAKEBIN:$PATH"
 fm_git_identity fmtest fmtest@example.invalid
 
 # A fresh git repo on `main` with one commit. Echoes its path.

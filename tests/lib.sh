@@ -11,7 +11,8 @@
 # string/exit-code/file assertions. It deliberately does NOT bundle the
 # behavior-specific fake tmux/treehouse/no-mistakes mocks: those encode terminal
 # and lifecycle assumptions that differ per suite and belong with the tests that
-# own them.
+# own them. The one exception is fm_fake_no_mistakes, a behavior-free guard that
+# keeps a suite from ever reaching the host's real no-mistakes binary.
 #
 # ROOT is exported as the firstmate repo root (this file lives in tests/), so a
 # sourcing test can use "$ROOT/bin/..." without recomputing it.
@@ -89,6 +90,22 @@ exit 0
 SH
     chmod +x "$fakebin/$tool"
   done
+}
+
+# fm_fake_no_mistakes <fakebin>: drop a no-mistakes stub that answers --version
+# with a compatible release and no-ops everything else. Any suite that reaches
+# fm-bootstrap.sh needs it on PATH: a real no-mistakes invoked from inside a
+# no-mistakes pipeline inherits NM_DAEMON=1 and starts a rival daemon on the
+# shared socket, which kills the pipeline run that is executing the tests.
+fm_fake_no_mistakes() {
+  cat > "$1/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --version ]; then
+  printf '%s\n' "${FM_FAKE_NO_MISTAKES_VERSION:-no-mistakes version v1.31.2 (fake) 2026-06-27T00:02:18Z}"
+fi
+exit 0
+SH
+  chmod +x "$1/no-mistakes"
 }
 
 # --- deterministic git identity and fixtures --------------------------------

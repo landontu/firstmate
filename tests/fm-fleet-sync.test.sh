@@ -19,6 +19,11 @@ set -u
 fm_git_identity fmtest fmtest@example.invalid
 
 TMP_ROOT=$(fm_test_tmproot fm-fleet-sync-tests)
+
+# Keep bootstrap off the host's real no-mistakes (see fm_fake_no_mistakes).
+NM_FAKEBIN=$(fm_fakebin "$TMP_ROOT/nm")
+fm_fake_no_mistakes "$NM_FAKEBIN"
+export PATH="$NM_FAKEBIN:$PATH"
 HOME_N=0
 
 # --- fixtures ---------------------------------------------------------------
