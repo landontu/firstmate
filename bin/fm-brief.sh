@@ -27,6 +27,8 @@
 # Scout tasks ignore mode - their deliverable is a report, not a merge.
 # Ship tasks include a project-memory section so durable project-intrinsic
 # learnings can be committed to AGENTS.md through the project's delivery path.
+# Ship and scout Rules end with the local-server cleanup rule (CLEANUP_RULE);
+# the secondmate charter only delegates, so its crewmates' briefs carry it instead.
 # Refuses to overwrite an existing brief.
 set -eu
 
@@ -65,6 +67,11 @@ ORIENT_FIRST=$(cat <<'EOF'
 Before diving in or grepping source, look for the repo's agent-facing entry points and read the relevant map if one exists.
 Common examples include an `AGENTS.md`/`CLAUDE.md` front-door or routing table, a `docs/agents/` router such as `WHERE-IS-IT.md`, a `CODEMAP.md`, or a top-level `README` "working in this repo" section.
 Only fall back to broad source search when there is no such index or it does not cover the task.
+EOF
+)
+CLEANUP_RULE=$(cat <<'EOF'
+7. Track every local server, port, or background process you start; stop it once you no longer need it, and always before appending done/blocked/failed.
+   Exceptions: a server backing an active human review stays up until that review ends; leave shared tools' self-managed servers (e.g. lavish-axi's) alone.
 EOF
 )
 
@@ -163,6 +170,7 @@ $ORIENT_FIRST
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
 6. If a decision belongs to a human (product choices, destructive actions),
    append \`needs-decision: {summary of options}\` and stop. Firstmate will reply with the decision.
+$CLEANUP_RULE
 
 # Definition of done
 Write your findings to \`$DATA/$ID/report.md\`.
@@ -262,6 +270,7 @@ $RULE1
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
 6. If a decision belongs to a human (product choices, destructive actions, ask-user findings),
    append \`needs-decision: {summary of options}\` and stop. Firstmate will reply with the decision.
+$CLEANUP_RULE
 
 # Project memory
 If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced durable project-intrinsic knowledge, run \`$FM_ROOT/bin/fm-ensure-agents-md.sh .\` in the worktree.
