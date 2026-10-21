@@ -236,9 +236,27 @@ content_in_default() {
   fi
   default_tree=$(git -C "$WT" rev-parse --quiet --verify "$ref^{tree}" 2>/dev/null) || return 1
   [ -n "$default_tree" ] || return 1
-  merged_tree=$(git -C "$WT" merge-tree --write-tree "$ref" HEAD 2>/dev/null) || return 1
+  merged_tree=$(git -C "$WT" merge-tree --write-tree "$ref" HEAD 2>/dev/null) \
+    || merged_tree=$(trivial_merged_tree "$ref") || return 1
   merged_tree=$(printf '%s\n' "$merged_tree" | head -1)
   [ "$merged_tree" = "$default_tree" ]
+}
+
+# Fallback for git < 2.38 (no merge-tree --write-tree): a 3-way read-tree merge in a
+# throwaway index. It resolves only trivial per-path merges, so it is stricter than
+# merge-tree; anything unresolved (or a criss-cross with several merge bases) fails
+# write-tree and stays inconclusive.
+trivial_merged_tree() {
+  local ref=$1 base idx tree rc
+  base=$(git -C "$WT" merge-base --all "$ref" HEAD 2>/dev/null) || return 1
+  [ -n "$base" ] && [ "$(printf '%s\n' "$base" | wc -l)" -eq 1 ] || return 1
+  idx=$(mktemp "${TMPDIR:-/tmp}/fm-teardown-idx.XXXXXX") || return 1
+  rm -f "$idx"
+  rc=0
+  GIT_INDEX_FILE="$idx" git -C "$WT" read-tree -m "$base" "$ref" HEAD >/dev/null 2>&1 \
+    && tree=$(GIT_INDEX_FILE="$idx" git -C "$WT" write-tree 2>/dev/null) || rc=1
+  rm -f "$idx"
+  [ "$rc" -eq 0 ] && printf '%s\n' "$tree"
 }
 
 # Has the worktree's committed work actually LANDED, though its commits are not
