@@ -15,6 +15,7 @@ Ship briefs also include the project-memory contract: run `bin/fm-ensure-agents-
 
 For scout tasks add `--scout`: the scaffold swaps the definition of done for the report contract (findings to `data/<id>/report.md`, no branch, no push, no PR) and declares the worktree scratch; scout is mode-agnostic.
 Scout briefs do not include the project-memory step, because their deliverable is a report rather than a committed project change.
+Ship and scout Rules both end with the local-server cleanup rule: the crewmate stops any server, port, or background process it started before appending `done`/`blocked`/`failed`, so nothing outlives the task; secondmate charters omit it because their crewmates' own briefs carry it.
 
 For secondmates use `bin/fm-brief.sh <id> --secondmate <project>...`.
 The scaffold writes a charter brief instead of a task brief.

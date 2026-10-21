@@ -185,7 +185,9 @@ treehouse_supports_lease() {
 no_mistakes_version_parts() {
   local output
   command -v no-mistakes >/dev/null 2>&1 || return 1
-  output=$(no-mistakes --version 2>/dev/null) || return 1
+  # Strip the daemon-mode env: run from inside a no-mistakes pipeline step,
+  # an inherited NM_DAEMON=1 turns this probe into a rival daemon.
+  output=$(env -u NM_DAEMON -u NM_HOME no-mistakes --version 2>/dev/null) || return 1
   printf '%s\n' "$output" | sed -nE 's/.*[vV]?([0-9]+)\.([0-9]+)\.([0-9]+).*/\1 \2 \3/p' | head -n 1
 }
 

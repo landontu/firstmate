@@ -43,15 +43,7 @@ fi
 exit 0
 SH
   chmod +x "$fakebin/treehouse"
-  cat > "$fakebin/no-mistakes" <<'SH'
-#!/usr/bin/env bash
-if [ "${1:-}" = --version ]; then
-  printf '%s\n' "${FM_FAKE_NO_MISTAKES_VERSION:-no-mistakes version v1.31.2 (fake) 2026-06-27T00:02:18Z}"
-  exit 0
-fi
-exit 0
-SH
-  chmod +x "$fakebin/no-mistakes"
+  fm_fake_no_mistakes "$fakebin"
   printf '%s\n' "$fakebin"
 }
 
@@ -156,6 +148,31 @@ ROWS
   pass "bootstrap enforces no-mistakes minimum version"
 }
 
+# Run inside a no-mistakes pipeline step, bootstrap inherits the daemon's
+# NM_DAEMON=1/NM_HOME; the version probe must not pass them on, or the real
+# binary starts a rival daemon on the shared socket and kills the pipeline run.
+test_no_mistakes_probe_drops_daemon_env() {
+  local case_dir fakebin out
+  case_dir="$TMP_ROOT/no-mistakes-daemon-env"
+  mkdir -p "$case_dir/home/config"
+  printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
+  fakebin=$(make_fake_toolchain "$case_dir")
+  add_tasks_axi "$fakebin" "0.1.1"
+  cat > "$fakebin/no-mistakes" <<SH
+#!/usr/bin/env bash
+printf 'NM_DAEMON=%s NM_HOME=%s\n' "\${NM_DAEMON-unset}" "\${NM_HOME-unset}" >> '$case_dir/probe.log'
+printf '%s\n' 'no-mistakes version v1.31.2 (fake)'
+SH
+  chmod +x "$fakebin/no-mistakes"
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 NM_DAEMON=1 NM_HOME="$case_dir/nm" "$ROOT/bin/fm-bootstrap.sh")
+  [ -z "$out" ] || fail "daemon env probe: expected silence, got: $out"
+  assert_grep "NM_DAEMON=unset NM_HOME=unset" "$case_dir/probe.log" \
+    "no-mistakes version probe inherited the daemon env"
+  assert_no_grep "NM_DAEMON=1" "$case_dir/probe.log" "no-mistakes version probe ran with NM_DAEMON=1"
+  pass "bootstrap's no-mistakes probe drops the daemon env"
+}
+
 test_crew_dispatch_active_rules_are_surfaced() {
   local case_dir fakebin out expect
   case_dir="$TMP_ROOT/dispatch-active"
@@ -205,5 +222,6 @@ ROWS
 
 test_bootstrap_reporting
 test_no_mistakes_min_version
+test_no_mistakes_probe_drops_daemon_env
 test_crew_dispatch_active_rules_are_surfaced
 test_crew_dispatch_validation
