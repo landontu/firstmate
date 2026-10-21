@@ -34,6 +34,11 @@
 # leased home releases its durable treehouse lease so the pool slot is freed,
 # never left leased forever. If the treehouse return fails, teardown leaves the
 # leased home and state in place instead of hiding a still-held lease.
+# Self-kill guard: treehouse return terminates every process whose cwd is inside
+# the returned worktree, so before anything is returned, removed, or killed
+# teardown refuses if its caller (or any ancestor process) is inside a target or
+# inside the task's own tmux pane, and prints what treehouse will terminate.
+# --force never bypasses this guard.
 # Usage: fm-teardown.sh <task-id> [--force]
 #   --force skips ordinary-task dirty and landed-work checks, skips scout report
 #   checks, and discards secondmate child work for kind=secondmate. Only use it
@@ -46,6 +51,17 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
+# The self-kill guard may move this script's cwd to /; pin relative paths first.
+abs_from_pwd() {
+  case "$1" in
+    /*) printf '%s\n' "$1" ;;
+    *) printf '%s\n' "$PWD/$1" ;;
+  esac
+}
+FM_HOME=$(abs_from_pwd "$FM_HOME")
+STATE=$(abs_from_pwd "$STATE")
+DATA=$(abs_from_pwd "$DATA")
+CONFIG=$(abs_from_pwd "$CONFIG")
 SECONDMATE_REG="$DATA/secondmates.md"
 SUB_HOME_MARKER=".fm-secondmate-home"
 # shellcheck source=bin/fm-tasks-axi-lib.sh
@@ -220,9 +236,27 @@ content_in_default() {
   fi
   default_tree=$(git -C "$WT" rev-parse --quiet --verify "$ref^{tree}" 2>/dev/null) || return 1
   [ -n "$default_tree" ] || return 1
-  merged_tree=$(git -C "$WT" merge-tree --write-tree "$ref" HEAD 2>/dev/null) || return 1
+  merged_tree=$(git -C "$WT" merge-tree --write-tree "$ref" HEAD 2>/dev/null) \
+    || merged_tree=$(trivial_merged_tree "$ref") || return 1
   merged_tree=$(printf '%s\n' "$merged_tree" | head -1)
   [ "$merged_tree" = "$default_tree" ]
+}
+
+# Fallback for git < 2.38 (no merge-tree --write-tree): a 3-way read-tree merge in a
+# throwaway index. It resolves only trivial per-path merges, so it is stricter than
+# merge-tree; anything unresolved (or a criss-cross with several merge bases) fails
+# write-tree and stays inconclusive.
+trivial_merged_tree() {
+  local ref=$1 base idx tree rc
+  base=$(git -C "$WT" merge-base --all "$ref" HEAD 2>/dev/null) || return 1
+  [ -n "$base" ] && [ "$(printf '%s\n' "$base" | wc -l)" -eq 1 ] || return 1
+  idx=$(mktemp "${TMPDIR:-/tmp}/fm-teardown-idx.XXXXXX") || return 1
+  rm -f "$idx"
+  rc=0
+  GIT_INDEX_FILE="$idx" git -C "$WT" read-tree -m "$base" "$ref" HEAD >/dev/null 2>&1 \
+    && tree=$(GIT_INDEX_FILE="$idx" git -C "$WT" write-tree 2>/dev/null) || rc=1
+  rm -f "$idx"
+  [ "$rc" -eq 0 ] && printf '%s\n' "$tree"
 }
 
 # Has the worktree's committed work actually LANDED, though its commits are not
@@ -476,6 +510,7 @@ remove_firstmate_home() {
   [ -e "$home" ] || return 0
   abs_home_path=$(validate_firstmate_home_for_removal "$home" "$label" "$expected_id") || return 1
   [ -n "$abs_home_path" ] || return 0
+  guard_caller_outside "$abs_home_path" || return 1
   if firstmate_home_has_treehouse_slot "$abs_home_path"; then
     command -v treehouse >/dev/null 2>&1 || {
       echo "error: treehouse command not found; cannot return $label $abs_home_path" >&2
@@ -536,6 +571,7 @@ cleanup_firstmate_home_children() {
       fi
     elif [ -n "$child_wt" ] && [ -d "$child_wt" ]; then
       validate_child_worktree_for_removal "$child_wt" "$child_proj" >/dev/null || return 1
+      guard_caller_outside "$child_wt" || return 1
       rm -f "$child_wt/.claude/settings.local.json" "$child_wt/.opencode/plugins/fm-turn-end.js" "$child_wt/.fm-grok-turnend"
       if [ -n "$child_proj" ] && [ -d "$child_proj" ] && command -v treehouse >/dev/null 2>&1; then
         ( cd "$child_proj" && treehouse return --force "$child_wt" ) || safe_rm_rf_child_worktree "$child_wt" "$child_proj"
@@ -556,6 +592,281 @@ remove_secondmate_registry_entry() {
   mv "$tmp" "$SECONDMATE_REG"
 }
 
+# --- Self-kill guard --------------------------------------------------------
+# treehouse return terminates every process whose cwd is inside the worktree it
+# returns, and the runtime kill removes the task's own window. If the shell or
+# agent harness that invoked this teardown sits inside either, teardown would
+# kill its caller (and itself) halfway through cleanup. So before anything is
+# returned, removed, or killed, teardown compares its own cwd and every
+# ancestor's cwd against each target: an ancestor inside a target refuses (this
+# script cannot move another process), while this script's own cwd alone is
+# moved out to / and teardown continues. --force does not bypass the guard: it
+# is about the caller's safety, not landed work.
+
+# Field separator for the guard's internal records: a non-whitespace byte, so
+# `read` keeps empty fields (an unreadable cwd, a missing window=) in place.
+GUARD_FS=$'\037'
+
+proc_parent_pid() {
+  local pid=$1 ppid
+  if [ -r "/proc/$pid/status" ]; then
+    ppid=$(awk '/^PPid:/ { print $2; exit }' "/proc/$pid/status" 2>/dev/null || true)
+  else
+    ppid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ' || true)
+  fi
+  case "$ppid" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s\n' "$ppid"
+}
+
+proc_cwd() {
+  local pid=$1 cwd=
+  if [ -d "/proc/$pid" ]; then
+    cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null || true)
+  elif command -v lsof >/dev/null 2>&1; then
+    cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)
+  fi
+  [ -n "$cwd" ] || return 1
+  printf '%s\n' "$cwd"
+}
+
+proc_comm() {
+  local pid=$1 comm=
+  if [ -r "/proc/$pid/comm" ]; then
+    comm=$(cat "/proc/$pid/comm" 2>/dev/null || true)
+  else
+    comm=$(ps -o comm= -p "$pid" 2>/dev/null || true)
+  fi
+  printf '%s\n' "${comm:-?}"
+}
+
+path_is_within() {
+  local dir=$1 path=$2
+  [ -n "$dir" ] && [ -n "$path" ] || return 1
+  [ "$path" = "$dir" ] && return 0
+  case "$path" in
+    "$dir"/*) return 0 ;;
+  esac
+  return 1
+}
+
+# CALLER_ANCESTORS holds one "pid<FS>cwd<FS>comm" line per ancestor of this
+# script, up to but excluding pid 1; cwd is empty when it could not be read.
+# CALLER_ANCESTORS_STATUS is ok, or unknown when no ancestor cwd was readable
+# (no /proc and no lsof), in which case only this script's own cwd is checked.
+CALLER_ANCESTORS=
+CALLER_ANCESTORS_STATUS=unloaded
+
+load_caller_ancestors() {
+  local pid=$$ n=0 known=0 cwd
+  [ "$CALLER_ANCESTORS_STATUS" = unloaded ] || return 0
+  while pid=$(proc_parent_pid "$pid"); do
+    [ "$pid" -gt 1 ] || break
+    n=$((n + 1))
+    [ "$n" -le 64 ] || break
+    if cwd=$(proc_cwd "$pid"); then
+      known=$((known + 1))
+    else
+      cwd=
+    fi
+    CALLER_ANCESTORS="$CALLER_ANCESTORS$pid$GUARD_FS$cwd$GUARD_FS$(proc_comm "$pid")
+"
+  done
+  if [ "$known" -gt 0 ]; then
+    CALLER_ANCESTORS_STATUS=ok
+  else
+    CALLER_ANCESTORS_STATUS=unknown
+    echo "note: cannot read the calling processes' cwds on this platform (no /proc or lsof); the self-kill guard checks only this script's own cwd." >&2
+  fi
+}
+
+refuse_self_kill() {
+  local what=$1 victims=$2
+  echo "REFUSED: $what, and the process that invoked this teardown would die with it:" >&2
+  printf '%s\n' "$victims" >&2
+  echo "Run the teardown from outside it: cd a shell out (e.g. cd $FM_HOME); restart any other listed process (agent harness, tmux server) from outside first. Then re-run bin/fm-teardown.sh $ID. --force does not bypass this guard." >&2
+}
+
+# Refuse (return 1) when any ancestor's cwd is inside <target>; move this
+# script's own cwd out when only it is inside.
+guard_caller_outside() {
+  local target=$1 abs pid cwd comm victims=
+  [ -d "$target" ] || return 0
+  abs=$(cd "$target" && pwd -P) || return 0
+  load_caller_ancestors
+  while IFS=$GUARD_FS read -r pid cwd comm; do
+    [ -n "$pid" ] || continue
+    path_is_within "$abs" "$cwd" || continue
+    victims="$victims  pid $pid ($comm): cwd $cwd
+"
+  done <<EOF
+$CALLER_ANCESTORS
+EOF
+  if [ -n "$victims" ]; then
+    refuse_self_kill "teardown would return or remove $abs, which terminates every process inside it" "${victims%
+}"
+    return 1
+  fi
+  cwd=$(pwd -P)
+  path_is_within "$abs" "$cwd" || return 0
+  if [ "$CALLER_ANCESTORS_STATUS" != ok ]; then
+    refuse_self_kill "teardown would return or remove $abs, which terminates every process inside it" \
+      "  pid $$ (fm-teardown.sh): cwd $cwd; its caller's cwd could not be verified"
+    return 1
+  fi
+  echo "note: this script's cwd $cwd is inside $abs; moving to / before returning it (no caller is inside)." >&2
+  cd /
+}
+
+# Echo "pid<FS>name" for each process `treehouse status`, run from <pool-dir>,
+# lists under the worktree whose physical path is <abs-wt>. Best-effort: prints
+# nothing when treehouse is missing, fails, or does not list the worktree, and
+# notes on stderr when it answered in a format this parser does not recognize.
+treehouse_listed_procs() {
+  local pool=$1 abs=$2 out path procs path_abs
+  command -v treehouse >/dev/null 2>&1 || return 0
+  [ -d "$pool" ] || return 0
+  out=$( cd "$pool" && treehouse status 2>/dev/null ) || return 0
+  [ -n "$out" ] || return 0
+  if ! printf '%s\n' "$out" | grep -q '^[0-9]'; then
+    echo "note: unrecognized treehouse status output; cannot list what treehouse return will terminate in $abs." >&2
+    return 0
+  fi
+  # Status prints "<n>  <state>  <path>" per worktree, plus "  (held by <x>)"
+  # on leased ones, then indented "name (pid), name (pid)" continuation lines
+  # for its processes.
+  printf '%s\n' "$out" | awk -v home="$HOME" -v fs="$GUARD_FS" '
+    /^[0-9]/ {
+      p = $0
+      sub(/^[0-9]+[ \t]+[^ \t]+[ \t]+/, "", p)
+      sub(/[ \t]+$/, "", p)
+      sub(/[ \t][ \t]+\(held by [^)]*\)$/, "", p)
+      if (substr(p, 1, 2) == "~/") p = home substr(p, 2)
+      cur = p
+      next
+    }
+    /^[ \t]/ && cur != "" { s = $0; sub(/^[ \t]+/, "", s); print cur fs s }
+  ' | while IFS=$GUARD_FS read -r path procs; do
+    path_abs=$(cd "$path" 2>/dev/null && pwd -P) || continue
+    [ "$path_abs" = "$abs" ] || continue
+    printf '%s\n' "$procs" | tr ',' '\n' \
+      | sed -n "s/^[[:space:]]*\(.*[^[:space:]]\)[[:space:]]*(\([0-9][0-9]*\))[[:space:]]*\$/\2$GUARD_FS\1/p"
+  done
+}
+
+pid_descends_from_any() {
+  local pid=$1 roots=$2 n=0
+  [ -n "$roots" ] || return 1
+  while [ -n "$pid" ] && [ "$pid" -gt 1 ] && [ "$n" -lt 64 ]; do
+    printf '%s\n' "$roots" | grep -qxF "$pid" && return 0
+    pid=$(proc_parent_pid "$pid") || return 1
+    n=$((n + 1))
+  done
+  return 1
+}
+
+# Cross-check the guard against the task's runtime pane (<pane-target> on
+# <backend>; tmux only), which teardown kills, and against what treehouse itself
+# will terminate in <target>: refuse if either includes this script or a caller,
+# and print the treehouse list so an unexpected victim is visible. Processes
+# under the task's own pane are the expected ones.
+report_treehouse_victims() {
+  local pool=$1 target=$2 pane_target=${3:-} backend=${4:-tmux}
+  local abs listed pid comm pane_pids='' caller_pids expected='' unexpected='' victims=''
+  load_caller_ancestors
+  caller_pids=$(printf '%s\n%s' "$$" "$CALLER_ANCESTORS" | cut -d "$GUARD_FS" -f1)
+  if [ -n "$pane_target" ] && [ "$backend" = tmux ]; then
+    pane_pids=$(tmux list-panes -t "$pane_target" -F '#{pane_pid}' 2>/dev/null || true)
+  fi
+  if [ -n "$pane_pids" ]; then
+    while IFS= read -r pid; do
+      [ -n "$pid" ] || continue
+      printf '%s\n' "$pane_pids" | grep -qxF "$pid" || continue
+      refuse_self_kill "teardown kills the task window $pane_target" \
+        "  pid $pid ($(proc_comm "$pid")): the task pane's own process is an ancestor of this teardown"
+      return 1
+    done <<EOF
+$caller_pids
+EOF
+  fi
+  [ -d "$target" ] || return 0
+  abs=$(cd "$target" && pwd -P) || return 0
+  listed=$(treehouse_listed_procs "$pool" "$abs")
+  [ -n "$listed" ] || return 0
+  while IFS=$GUARD_FS read -r pid comm; do
+    [ -n "$pid" ] || continue
+    if printf '%s\n' "$caller_pids" | grep -qxF "$pid"; then
+      victims="$victims  pid $pid ($comm): listed by treehouse status
+"
+    elif pid_descends_from_any "$pid" "$pane_pids"; then
+      expected="$expected, $comm ($pid)"
+    else
+      unexpected="$unexpected, $comm ($pid)"
+    fi
+  done <<EOF
+$listed
+EOF
+  if [ -n "$victims" ]; then
+    refuse_self_kill "teardown would return or remove $abs, which terminates every process inside it" "${victims%
+}"
+    return 1
+  fi
+  if [ -n "$pane_pids" ]; then
+    [ -z "$expected" ] || echo "treehouse return will terminate in $abs (task pane): ${expected#, }"
+    [ -z "$unexpected" ] || echo "WARNING: treehouse return will also terminate in $abs (not the task pane): ${unexpected#, }" >&2
+  else
+    echo "treehouse return will terminate in $abs: ${unexpected#, }"
+  fi
+}
+
+# Echo "pool<FS>target<FS>pane-target<FS>backend" for every path this teardown
+# will return or remove, mirroring the cleanup below. Child secondmate homes
+# recurse, matching cleanup_firstmate_home_children.
+guard_record() {
+  printf '%s\n' "$1$GUARD_FS$2$GUARD_FS$3$GUARD_FS$4"
+}
+
+removal_targets_of_home() {
+  local home=$1 child_meta child_kind child_home child_wt child_t child_backend
+  [ -d "$home/state" ] || return 0
+  for child_meta in "$home/state"/*.meta; do
+    [ -e "$child_meta" ] || continue
+    child_wt=$(meta_value "$child_meta" worktree)
+    child_kind=$(meta_value "$child_meta" kind)
+    child_t=$(meta_value "$child_meta" window)
+    child_backend=$(fm_backend_of_meta "$child_meta")
+    if [ "$child_kind" = secondmate ]; then
+      child_home=$(meta_value "$child_meta" home)
+      [ -n "$child_home" ] || child_home=$child_wt
+      if [ -z "$child_home" ] || [ ! -d "$child_home" ]; then
+        continue
+      fi
+      guard_record "$FM_ROOT" "$child_home" "$child_t" "$child_backend"
+      removal_targets_of_home "$child_home"
+    else
+      guard_record "$(meta_value "$child_meta" project)" "$child_wt" "$child_t" "$child_backend"
+    fi
+  done
+}
+
+# Preflight: run the guard and the cross-checks for every target before any
+# cleanup mutates state, so a refusal leaves everything untouched.
+preflight_self_kill_guard() {
+  local targets pool target pane backend
+  if [ "$KIND" = secondmate ]; then
+    targets=$(guard_record "$FM_ROOT" "$HOME_PATH" "$T" "$BACKEND"
+      [ "$FORCE" != "--force" ] || removal_targets_of_home "$HOME_PATH")
+  else
+    targets=$(guard_record "$PROJ" "$WT" "$T" "$BACKEND")
+  fi
+  while IFS=$GUARD_FS read -r pool target pane backend; do
+    [ -n "$target$pane" ] || continue
+    guard_caller_outside "$target" || return 1
+    report_treehouse_victims "$pool" "$target" "$pane" "$backend" || return 1
+  done <<EOF
+$targets
+EOF
+}
+
 if [ "$KIND" = secondmate ]; then
   [ -n "$HOME_PATH" ] || HOME_PATH=$WT
   validate_firstmate_home_for_removal "$HOME_PATH" "secondmate home" "$ID" >/dev/null || exit 1
@@ -574,10 +885,6 @@ if [ "$KIND" = secondmate ] && [ "$FORCE" != "--force" ]; then
       exit 1
     done
   fi
-fi
-
-if [ "$KIND" = secondmate ] && [ "$FORCE" = "--force" ]; then
-  cleanup_firstmate_home_children "$HOME_PATH"
 fi
 
 if [ -d "$WT" ] && [ "$FORCE" != "--force" ]; then
@@ -642,8 +949,17 @@ if [ -d "$WT" ] && [ "$FORCE" != "--force" ]; then
   fi
 fi
 
+# Every refusal above is a landed-work or path-safety check; from here on teardown
+# mutates. Refuse first if returning a target would kill this teardown's caller.
+preflight_self_kill_guard || exit 1
+
+if [ "$KIND" = secondmate ] && [ "$FORCE" = "--force" ]; then
+  cleanup_firstmate_home_children "$HOME_PATH"
+fi
+
 # Best-effort: drop the local task branch so the shared repo does not accumulate refs.
 if [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
+  guard_caller_outside "$WT" || exit 1
   branch=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
   if [ "$branch" != "HEAD" ]; then
     if git -C "$WT" checkout --detach -q 2>/dev/null; then

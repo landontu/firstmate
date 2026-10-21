@@ -119,3 +119,4 @@ If `treehouse return` fails for a leased home, teardown stops with state intact 
 With `--force`, teardown is the explicit discard path.
 It kills child windows, discards child work and state inside the secondmate home, removes the route, releases the lease, and removes the retired secondmate home.
 Never use `--force` unless the captain explicitly said to discard the work.
+Either way, teardown refuses if its caller or any ancestor process has its cwd inside the home or any child worktree or home it would return or remove, or runs inside a window it would kill; `--force` does not bypass this guard, so cd out and re-run.

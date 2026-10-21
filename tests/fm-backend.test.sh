@@ -535,6 +535,10 @@ test_teardown_conformance_old_vs_new() {
 
   expect_code 0 "$rc_old" "old fm-teardown.sh (scout, report present) should succeed"$'\n'"$out_old"
   expect_code 0 "$rc_new" "new fm-teardown.sh (scout, report present) should succeed"$'\n'"$out_new"
+  # The self-kill guard's read-only `treehouse status` and `tmux list-panes`
+  # queries are a deliberate preflight, not backend commands, so drop them from
+  # both logs before comparing.
+  sed -i.bak -e "/^treehouse"$'\x1f'"status\$/d" -e "/^tmux"$'\x1f'"list-panes"$'\x1f'"/d" "$log_old" "$log_new"
   diff -u "$log_old" "$log_new" > "$TMP_ROOT/teardown-diff.txt" 2>&1 \
     || fail "fm-teardown.sh: tmux+treehouse command log differs old vs new"$'\n'"$(cat "$TMP_ROOT/teardown-diff.txt")"
   assert_contains "$(cat "$log_new")" "treehouse"$'\x1f''return'$'\x1f''--force'$'\x1f'"$wt" \
