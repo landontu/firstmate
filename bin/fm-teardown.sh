@@ -771,7 +771,7 @@ pid_descends_from_any() {
 # under the task's own pane are the expected ones.
 report_treehouse_victims() {
   local pool=$1 target=$2 pane_target=${3:-} backend=${4:-tmux}
-  local abs listed pid comm pane_pids= caller_pids expected= unexpected= victims=
+  local abs listed pid comm pane_pids='' caller_pids expected='' unexpected='' victims=''
   load_caller_ancestors
   caller_pids=$(printf '%s\n%s' "$$" "$CALLER_ANCESTORS" | cut -d "$GUARD_FS" -f1)
   if [ -n "$pane_target" ] && [ "$backend" = tmux ]; then
