@@ -29,6 +29,13 @@ Task meta records `backend=` only for a non-default backend; an absent `backend=
 A herdr task additionally records `herdr_session=`, `herdr_workspace_id=`, `herdr_tab_id=`, and `herdr_pane_id=`.
 The `config/backend` file is not inherited by secondmate homes.
 
+## Local brief rules (config/brief-rules.md)
+
+`config/brief-rules.md` is an optional local, gitignored file of standing per-captain crewmate rules.
+When it exists and is non-empty, `bin/fm-brief.sh` appends its contents verbatim after the standard Rules (which end with rule 8, the no-global-installs rule) in every ship and scout brief it scaffolds; number its lines from 9 so they continue the list.
+An absent or empty file leaves briefs unchanged, and secondmate charters never include it.
+The file is not inherited by secondmate homes.
+
 ## Gate defaults (.no-mistakes.yaml)
 
 The tracked `.no-mistakes.yaml` keeps test evidence outside the repo and defines `commands.test` so no-mistakes runs firstmate's bash behavior suite directly.
@@ -167,6 +174,7 @@ Runtime tuning via environment variables (defaults shown):
 FM_HOME=                 # optional operational home; unset means this repo root
 FM_ROOT_OVERRIDE=        # override firstmate repo root and tangle-guard target; also legacy whole-root override when FM_HOME is unset
 FM_STATE_OVERRIDE=       # alternate state dir, mainly for tests
+FM_WAKE_QUEUE=           # alternate durable wake-queue path; defaults to state/.wake-queue
 FM_DATA_OVERRIDE=        # alternate data dir, mainly for tests
 FM_PROJECTS_OVERRIDE=    # alternate projects dir, mainly for tests
 FM_CONFIG_OVERRIDE=      # alternate config dir, mainly for tests

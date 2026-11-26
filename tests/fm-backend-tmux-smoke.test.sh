@@ -60,6 +60,24 @@ if fm_backend_tmux_create_task "$SESSION" "$WINDOW" "$HOME" 2>/dev/null; then
 fi
 pass "real tmux: fm_backend_tmux_create_task creates a window and refuses a duplicate"
 
+# A bare session target resolves to the session's ACTIVE window on some tmux
+# versions, so new-window collides with "index N in use". Whether the real server
+# trips on it depends on the tmux version, so assert the argv deterministically:
+# create_task must target "<session>:".
+SPY_DIR=$(mktemp -d "${TMPDIR:-/tmp}/fm-backend-spy.XXXXXX")
+cat > "$SPY_DIR/tmux" <<SH
+#!/usr/bin/env bash
+printf '%s\\n' "\$*" >> "$SPY_DIR/log"
+exec "$SHIM_DIR/tmux" "\$@"
+SH
+chmod +x "$SPY_DIR/tmux"
+PATH="$SPY_DIR:$PATH" fm_backend_tmux_create_task "$SESSION" "fm-smoke2" "$HOME" \
+  || fail "fm_backend_tmux_create_task failed to create a second window"
+grep -q -- "^new-window .*-t $SESSION: " "$SPY_DIR/log" \
+  || fail "create_task must target \"<session>:\", got: $(grep new-window "$SPY_DIR/log")"
+rm -rf "$SPY_DIR"
+pass "real tmux: fm_backend_tmux_create_task targets \"<session>:\" (never a bare session name)"
+
 # --- send text + Enter -------------------------------------------------------
 
 tmux send-keys -t "$TARGET" "cd /tmp && PS1='smoke\$ '" Enter

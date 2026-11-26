@@ -61,6 +61,57 @@ test_secondmate_charter_omits_cleanup_rule() {
   pass "fm-brief: secondmate charter omits the crewmate cleanup rule"
 }
 
+scaffold_kind() {  # <home> <kind> <id>
+  if [ "$2" = scout ]; then
+    FM_HOME="$1" "$ROOT/bin/fm-brief.sh" "$3" nm-app --scout >/dev/null || fail "$2 scaffold failed"
+  else
+    FM_HOME="$1" "$ROOT/bin/fm-brief.sh" "$3" nm-app >/dev/null || fail "$2 scaffold failed"
+  fi
+}
+
+test_install_rule_and_local_rules() {
+  local home kind brief next
+  home="$TMP_ROOT/install"
+  mkdir -p "$home/data"
+  printf -- '- nm-app [no-mistakes] - t (added 2026-10-20)\n' > "$home/data/projects.md"
+  for kind in ship scout; do
+    scaffold_kind "$home" "$kind" "inst-$kind"
+    brief="$home/data/inst-$kind/brief.md"
+    assert_grep '8. Install nothing globally or system-wide without explicit per-install approval' "$brief" \
+      "$kind brief is missing the no-global-installs rule"
+    assert_grep 'project-local dependencies in the worktree are fine' "$brief" "$kind install rule lacks the local-deps carve-out"
+    assert_no_grep 'LOCALRULE' "$brief" "$kind brief has local rules without a config file"
+  done
+  mkdir -p "$home/config"
+  printf '9. LOCALRULE keep it terse.\n' > "$home/config/brief-rules.md"
+  for kind in ship scout; do
+    scaffold_kind "$home" "$kind" "loc-$kind"
+    brief="$home/data/loc-$kind/brief.md"
+    next=$(grep -A1 '^8. Install nothing globally' "$brief" | tail -1)
+    [ "$next" = '9. LOCALRULE keep it terse.' ] || fail "$kind local rules do not directly follow the install rule (got: $next)"
+  done
+  FM_HOME="$home" FM_SECONDMATE_CHARTER='ops' "$ROOT/bin/fm-brief.sh" loc-sm --secondmate app >/dev/null || fail "charter scaffold failed"
+  assert_no_grep 'LOCALRULE' "$home/data/loc-sm/brief.md" "secondmate charter must not carry local brief rules"
+  pass "fm-brief: install rule in ship+scout; config/brief-rules.md appended when present, absent = no change"
+}
+
+test_rejects_dash_task_id() {
+  local home out rc id
+  home="$TMP_ROOT/dash"
+  mkdir -p "$home/data"
+  for id in --help -x; do
+    out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" app 2>&1) && rc=0 || rc=$?
+    [ "$rc" -ne 0 ] || fail "fm-brief.sh accepted task id $id"
+    assert_contains "$out" "usage: fm-brief.sh" "no usage printed for task id $id"
+  done
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" 2>&1) && rc=0 || rc=$?
+  [ "$rc" -ne 0 ] || fail "fm-brief.sh accepted no task id"
+  { [ ! -e "$home/data/--help" ] && [ ! -e "$home/data/-x" ]; } || fail "junk data dir created for dash-prefixed id"
+  pass "fm-brief: dash-prefixed or missing task id prints usage and creates nothing"
+}
+
 test_ship_briefs_carry_cleanup_rule
 test_scout_brief_carries_cleanup_rule
 test_secondmate_charter_omits_cleanup_rule
+test_install_rule_and_local_rules
+test_rejects_dash_task_id
