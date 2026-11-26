@@ -27,8 +27,10 @@
 # Scout tasks ignore mode - their deliverable is a report, not a merge.
 # Ship tasks include a project-memory section so durable project-intrinsic
 # learnings can be committed to AGENTS.md through the project's delivery path.
-# Ship and scout Rules end with the local-server cleanup rule (CLEANUP_RULE);
-# the secondmate charter only delegates, so its crewmates' briefs carry it instead.
+# Ship and scout Rules end with the local-server cleanup rule (CLEANUP_RULE), then
+# the no-global-installs rule (INSTALL_RULE), then the verbatim contents of the
+# optional per-user $FM_HOME/config/brief-rules.md when that file exists; the
+# secondmate charter only delegates, so its crewmates' briefs carry them instead.
 # Refuses to overwrite an existing brief.
 set -eu
 
@@ -49,7 +51,14 @@ for a in "$@"; do
     *) POS+=("$a") ;;
   esac
 done
-ID=${POS[0]}
+ID=${POS[0]-}
+usage() {
+  echo "usage: fm-brief.sh <task-id> <repo-name> [--scout]" >&2
+  echo "       fm-brief.sh <task-id> --secondmate <project>..." >&2
+}
+case "$ID" in
+  ''|-*) usage; echo "error: task id must be non-empty and must not start with '-'" >&2; exit 2 ;;
+esac
 
 BRIEF="$DATA/$ID/brief.md"
 [ -e "$BRIEF" ] && { echo "error: $BRIEF already exists" >&2; exit 1; }
@@ -74,6 +83,18 @@ CLEANUP_RULE=$(cat <<'EOF'
    Exceptions: a server backing an active human review stays up until that review ends; leave shared tools' self-managed servers (e.g. lavish-axi's) alone.
 EOF
 )
+INSTALL_RULE=$(cat <<'EOF'
+8. Install nothing globally or system-wide without explicit per-install approval relayed by firstmate; project-local dependencies in the worktree are fine.
+EOF
+)
+# Optional per-user rules (config/ is gitignored); appended verbatim after the standard rules.
+LOCAL_RULES_FILE="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/brief-rules.md"
+RULES_TAIL=$INSTALL_RULE
+if [ -f "$LOCAL_RULES_FILE" ]; then
+  LOCAL_RULES=$(cat "$LOCAL_RULES_FILE")
+  [ -z "$LOCAL_RULES" ] || RULES_TAIL="$RULES_TAIL
+$LOCAL_RULES"
+fi
 
 if [ "$KIND" = secondmate ]; then
 SECONDMATE_PROJECTS=""
@@ -171,6 +192,7 @@ $ORIENT_FIRST
 6. If a decision belongs to a human (product choices, destructive actions),
    append \`needs-decision: {summary of options}\` and stop. Firstmate will reply with the decision.
 $CLEANUP_RULE
+$RULES_TAIL
 
 # Definition of done
 Write your findings to \`$DATA/$ID/report.md\`.
@@ -271,6 +293,7 @@ $RULE1
 6. If a decision belongs to a human (product choices, destructive actions, ask-user findings),
    append \`needs-decision: {summary of options}\` and stop. Firstmate will reply with the decision.
 $CLEANUP_RULE
+$RULES_TAIL
 
 # Project memory
 If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced durable project-intrinsic knowledge, run \`$FM_ROOT/bin/fm-ensure-agents-md.sh .\` in the worktree.

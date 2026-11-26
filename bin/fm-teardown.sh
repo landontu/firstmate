@@ -985,6 +985,8 @@ remove_grok_turnend_auth "$STATE" "$ID"
 # Read before the state-file rm below; empty (pre-fix tasks without tasktmp=) is a no-op.
 [ -n "$TASK_TMP" ] && rm -rf "$TASK_TMP"
 rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.check.sh" "$STATE/$ID.meta" "$STATE/$ID.pi-ext.ts" "$STATE/$ID.grok-turnend-token"
+# Drop this task's watcher/daemon marker files (.hash-*, .seen-*, .hb-surfaced-*, ...) so state/ does not accumulate litter.
+"$FM_ROOT/bin/fm-state-prune.sh" --id "$ID" >/dev/null 2>&1 || true
 if [ "$KIND" != scout ] && [ "$KIND" != secondmate ] && [ "$MODE" != local-only ]; then
   "$FM_ROOT/bin/fm-fleet-sync.sh" "$PROJ" || true
 fi

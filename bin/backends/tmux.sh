@@ -76,7 +76,7 @@ fm_backend_tmux_create_task() {  # <session> <window-name> <proj-abs>
     echo "error: window $ses:$wname already exists" >&2
     return 1
   fi
-  tmux new-window -d -t "$ses" -n "$wname" -c "$proj_abs"
+  tmux new-window -d -t "$ses:" -n "$wname" -c "$proj_abs"
 }
 
 # fm_backend_tmux_current_path: the live pane's current working directory, or

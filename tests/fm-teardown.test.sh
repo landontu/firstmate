@@ -832,6 +832,29 @@ test_treehouse_listing_separates_task_pane_from_strays() {
   pass "teardown labels the task pane's processes and warns about any other treehouse victim"
 }
 
+test_teardown_removes_task_markers_only() {
+  local case_dir rc st f
+  case_dir=$(make_case markers)
+  st="$case_dir/state"
+  write_meta "$case_dir" local-only ship
+  wt_commit "$case_dir" "merged work"
+  git -C "$case_dir/project" update-ref refs/heads/main "$(git -C "$case_dir/wt" rev-parse HEAD)"
+  for f in .hash-firstmate_fm-task-x1 .count-firstmate_fm-task-x1 .stale-firstmate_fm-task-x1 \
+           .stale-since-firstmate_fm-task-x1 .seen-task-x1_status .seen-task-x1_turn-ended .hb-surfaced-task-x1 \
+           .hash-firstmate_fm-other-y2 .seen-other-y2_status .hb-surfaced-other-y2; do
+    echo x > "$st/$f"
+  done
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "markers: teardown should succeed"
+  for f in "$st"/.*task-x1*; do [ ! -e "$f" ] || fail "markers: leftover $f after teardown"; done
+  [ -e "$st/.hash-firstmate_fm-other-y2" ] && [ -e "$st/.seen-other-y2_status" ] && [ -e "$st/.hb-surfaced-other-y2" ] \
+    || fail "markers: teardown removed another task's markers"
+  pass "teardown removes the torn-down task's watcher markers and leaves other tasks' alone"
+}
+
 test_caller_inside_task_pane_refuses() {
   local case_dir rc
   case_dir=$(make_case self-kill-pane)
@@ -878,3 +901,4 @@ test_script_own_cwd_inside_worktree_moves_out
 test_treehouse_listed_processes_are_printed_and_caller_refuses
 test_treehouse_listing_separates_task_pane_from_strays
 test_caller_inside_task_pane_refuses
+test_teardown_removes_task_markers_only
