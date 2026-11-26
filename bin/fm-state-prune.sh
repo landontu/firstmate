@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Remove per-task watcher/daemon marker files from state/ for tasks that are gone.
 # Usage: fm-state-prune.sh [--id <task-id>] [--dry-run]
-#   (no args)   sweep: remove markers for every id with no state/<id>.meta and no
-#               pending entry in the wake queue. Idempotent; live tasks are never touched.
+#   (no args)   sweep: remove markers for every id with no state/<id>.meta, no
+#               state/<id>.status or state/<id>.turn-ended, and no pending entry in
+#               the wake queue. Idempotent; live tasks are never touched.
 #   --id <id>   remove exactly that task's markers (used by fm-teardown.sh after the
 #               task's meta is gone); refuses while state/<id>.meta still exists.
 #   --dry-run   print what would be removed, remove nothing.
@@ -11,6 +12,7 @@
 #   .seen-<id>_status, .seen-<id>_turn-ended                  signal signatures
 #   .hb-surfaced-<id>                                         heartbeat surfaced status
 #   .subsuper-seen-status-<id>, .subsuper-stale-<id>          away-mode daemon dedup
+# Herdr pane-key markers (<herdr-session>_<pane-id>) carry no task id and are not covered.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -75,6 +77,7 @@ for f in "$STATE"/.hash-* "$STATE"/.count-* "$STATE"/.stale-* "$STATE"/.seen-* \
     [ ! -e "$STATE/$ONLY.meta" ] || { echo "error: $ONLY is live (state/$ONLY.meta exists)" >&2; exit 1; }
   else
     [ ! -e "$STATE/$id.meta" ] || continue
+    [ ! -e "$STATE/$id.status" ] && [ ! -e "$STATE/$id.turn-ended" ] || continue
     queue_mentions "$id" && continue
   fi
   if [ "$DRY" = 1 ]; then echo "would remove $f"; else rm -f "$f"; fi

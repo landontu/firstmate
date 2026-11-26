@@ -56,6 +56,21 @@ test_sweep_prunes_only_orphans() {
   pass "fm-state-prune: sweep removes only orphan markers, keeps live/queued/non-task files, idempotent"
 }
 
+test_sweep_keeps_ids_with_signal_files() {
+  local st="$TMP_ROOT/signals/state"
+  mkdir -p "$st"
+  markers_for "$st" status-e5 firstmate
+  markers_for "$st" turned-f6 firstmate
+  markers_for "$st" gone-g7 firstmate
+  echo "working" > "$st/status-e5.status"
+  : > "$st/turned-f6.turn-ended"
+  FM_STATE_OVERRIDE="$st" "$PRUNE" >/dev/null || fail "signals: prune failed"
+  [ "$(count_for "$st" status-e5)" = 9 ] || fail "signals: markers removed while state/<id>.status exists"
+  [ "$(count_for "$st" turned-f6)" = 9 ] || fail "signals: markers removed while state/<id>.turn-ended exists"
+  [ "$(count_for "$st" gone-g7)" = 0 ] || fail "signals: orphan gone-g7 markers survived"
+  pass "fm-state-prune: sweep keeps markers for meta-less ids that still have a status or turn-ended file"
+}
+
 test_id_mode() {
   local st="$TMP_ROOT/idmode/state" rc
   mkdir -p "$st"
@@ -73,4 +88,5 @@ test_id_mode() {
 }
 
 test_sweep_prunes_only_orphans
+test_sweep_keeps_ids_with_signal_files
 test_id_mode

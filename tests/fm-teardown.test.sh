@@ -855,6 +855,32 @@ test_teardown_removes_task_markers_only() {
   pass "teardown removes the torn-down task's watcher markers and leaves other tasks' alone"
 }
 
+test_teardown_prunes_markers_with_relative_state_after_cd() {
+  local case_dir rc st f
+  case_dir=$(make_case markers-relstate)
+  st="$case_dir/state"
+  write_meta "$case_dir" local-only ship
+  wt_commit "$case_dir" "merged work"
+  git -C "$case_dir/project" update-ref refs/heads/main "$(git -C "$case_dir/wt" rev-parse HEAD)"
+  for f in .hash-firstmate_fm-task-x1 .seen-task-x1_status .hb-surfaced-task-x1; do
+    echo x > "$st/$f"
+  done
+  set +e
+  (
+    cd "$case_dir/wt" || exit 99
+    exec env FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="../state" \
+      FM_CONFIG_OVERRIDE="$case_dir/config" PATH="$case_dir/fakebin:$PATH" \
+      "$TEARDOWN" task-x1
+  ) > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "markers-relstate: teardown should succeed: $(cat "$case_dir/stderr")"
+  grep -F "moving to / before returning it" "$case_dir/stderr" >/dev/null \
+    || fail "markers-relstate: teardown did not move its cwd to /"
+  for f in "$st"/.*task-x1*; do [ ! -e "$f" ] || fail "markers-relstate: leftover $f after teardown"; done
+  pass "teardown prunes markers via its resolved state path even with a relative state override after moving to /"
+}
+
 test_caller_inside_task_pane_refuses() {
   local case_dir rc
   case_dir=$(make_case self-kill-pane)
@@ -902,3 +928,4 @@ test_treehouse_listed_processes_are_printed_and_caller_refuses
 test_treehouse_listing_separates_task_pane_from_strays
 test_caller_inside_task_pane_refuses
 test_teardown_removes_task_markers_only
+test_teardown_prunes_markers_with_relative_state_after_cd
