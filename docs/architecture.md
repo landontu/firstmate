@@ -129,6 +129,7 @@ GitHub lookup errors fall back to the content check and still refuse if that che
 If no `pr=` was ever recorded, teardown can still discover a merged PR by matching the worktree branch name and fetching `refs/pull/<n>/head` when the head branch was deleted.
 Those PR-head and content checks let a squash-merged PR whose head branch was deleted tear down cleanly without using `--force`; `local-only` work instead tears down after the approved local default-branch merge or after the branch is pushed to any remote.
 Before returning, removing, or killing anything, teardown also refuses when its caller or any ancestor process has its cwd inside a worktree or home it would return or remove (`treehouse return` terminates every process inside), or runs inside the task's own tmux pane; `--force` does not bypass this guard.
+After a successful teardown, `bin/fm-state-prune.sh --id <id>` removes that task's watcher and daemon marker files from `state/`; running `bin/fm-state-prune.sh` with no arguments sweeps markers left by long-gone tasks, skipping any id that still has a meta, status, or turn-ended file or a pending wake-queue entry.
 
 ## Optional X mode
 
